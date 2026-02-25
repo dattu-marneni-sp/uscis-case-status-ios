@@ -15,7 +15,9 @@ struct AddCaseSheet: View {
             Form {
                 Section {
                     TextField("e.g. EAC2190000001", text: $receiptNumber)
+                        #if os(iOS)
                         .textInputAutocapitalization(.characters)
+                        #endif
                         .autocorrectionDisabled()
                         .monospaced()
                         .focused($focusedField, equals: .receipt)
@@ -37,7 +39,9 @@ struct AddCaseSheet: View {
                 }
             }
             .navigationTitle("Add Case")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

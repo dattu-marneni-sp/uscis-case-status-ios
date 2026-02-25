@@ -6,7 +6,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(.systemGroupedBackground)
+                backgroundFill
                     .ignoresSafeArea()
 
                 if viewModel.cases.isEmpty {
@@ -25,7 +25,7 @@ struct ContentView: View {
                 }
 
                 if !viewModel.cases.isEmpty {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .navigation) {
                         Button {
                             Task { await viewModel.refreshAllCases() }
                         } label: {
@@ -46,6 +46,14 @@ struct ContentView: View {
                 Text(viewModel.errorMessage ?? "An unknown error occurred.")
             }
         }
+    }
+
+    private var backgroundFill: Color {
+        #if os(iOS)
+        Color(.systemGroupedBackground)
+        #else
+        Color(nsColor: .windowBackgroundColor)
+        #endif
     }
 
     // MARK: - Empty State

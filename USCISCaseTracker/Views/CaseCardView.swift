@@ -18,7 +18,7 @@ struct CaseCardView: View {
                 statusSection
             }
         }
-        .background(Color(.systemBackground))
+        .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
         .padding(.horizontal)
@@ -157,6 +157,14 @@ struct CaseCardView: View {
     }
 
     // MARK: - Helpers
+
+    private var cardBackground: Color {
+        #if os(iOS)
+        Color(.systemBackground)
+        #else
+        Color(nsColor: .controlBackgroundColor)
+        #endif
+    }
 
     private func startEditing() {
         editedNickname = caseItem.nickname
