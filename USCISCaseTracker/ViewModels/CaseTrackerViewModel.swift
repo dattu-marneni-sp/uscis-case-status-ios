@@ -7,9 +7,9 @@ final class CaseTrackerViewModel: ObservableObject {
     @Published var showAddSheet = false
     @Published var errorMessage: String?
     @Published var showError = false
+    @Published var refreshingCaseId: UUID?
 
     private let persistence = PersistenceService.shared
-    private let uscisService = USCISService.shared
 
     init() {
         cases = persistence.loadCases()
@@ -18,6 +18,12 @@ final class CaseTrackerViewModel: ObservableObject {
     func addCase(receiptNumber: String, nickname: String) {
         let cleaned = receiptNumber.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !cleaned.isEmpty else { return }
+
+        guard USCISService.isValidReceiptNumber(cleaned) else {
+            errorMessage = USCISError.invalidReceiptNumber.localizedDescription
+            showError = true
+            return
+        }
 
         if cases.contains(where: { $0.receiptNumber == cleaned }) {
             errorMessage = "Case \(cleaned) is already being tracked."
@@ -32,14 +38,7 @@ final class CaseTrackerViewModel: ObservableObject {
         cases.append(newCase)
         save()
 
-        Task {
-            await refreshCase(id: newCase.id)
-        }
-    }
-
-    func deleteCase(at offsets: IndexSet) {
-        cases.remove(atOffsets: offsets)
-        save()
+        refreshingCaseId = newCase.id
     }
 
     func deleteCase(id: UUID) {
@@ -53,32 +52,36 @@ final class CaseTrackerViewModel: ObservableObject {
         save()
     }
 
-    func refreshCase(id: UUID) async {
+    func startRefresh(id: UUID) {
         guard let index = cases.firstIndex(where: { $0.id == id }) else { return }
         cases[index].isLoading = true
+        refreshingCaseId = id
+    }
 
-        do {
-            let status = try await uscisService.fetchCaseStatus(receiptNumber: cases[index].receiptNumber)
-            if let idx = cases.firstIndex(where: { $0.id == id }) {
-                cases[idx].status = status
-                cases[idx].lastRefreshed = Date()
-                cases[idx].isLoading = false
-            }
-        } catch {
-            if let idx = cases.firstIndex(where: { $0.id == id }) {
-                cases[idx].isLoading = false
-            }
-            errorMessage = error.localizedDescription
-            showError = true
-        }
-
+    func completeRefresh(id: UUID, status: CaseStatus) {
+        guard let index = cases.firstIndex(where: { $0.id == id }) else { return }
+        cases[index].status = status
+        cases[index].lastRefreshed = Date()
+        cases[index].isLoading = false
+        refreshingCaseId = nil
         save()
     }
 
-    func refreshAllCases() async {
-        for caseItem in cases {
-            await refreshCase(id: caseItem.id)
+    func failRefresh(id: UUID, error: String) {
+        if let index = cases.firstIndex(where: { $0.id == id }) {
+            cases[index].isLoading = false
         }
+        refreshingCaseId = nil
+        errorMessage = error
+        showError = true
+    }
+
+    func cancelRefresh() {
+        if let id = refreshingCaseId,
+           let index = cases.firstIndex(where: { $0.id == id }) {
+            cases[index].isLoading = false
+        }
+        refreshingCaseId = nil
     }
 
     private func save() {

@@ -17,6 +17,7 @@
 		A10008 /* CaseTrackerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20008; };
 		A10009 /* CaseCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20009; };
 		A10010 /* AddCaseSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20010; };
+		A10011 /* USCISWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20011; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		A20008 /* CaseTrackerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseTrackerViewModel.swift; sourceTree = "<group>"; };
 		A20009 /* CaseCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseCardView.swift; sourceTree = "<group>"; };
 		A20010 /* AddCaseSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddCaseSheet.swift; sourceTree = "<group>"; };
+		A20011 /* USCISWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USCISWebView.swift; sourceTree = "<group>"; };
 		A30001 /* USCISCaseTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = USCISCaseTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -97,6 +99,7 @@
 				A20002 /* ContentView.swift */,
 				A20009 /* CaseCardView.swift */,
 				A20010 /* AddCaseSheet.swift */,
+				A20011 /* USCISWebView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -195,6 +198,7 @@
 				A10008 /* CaseTrackerViewModel.swift in Sources */,
 				A10009 /* CaseCardView.swift in Sources */,
 				A10010 /* AddCaseSheet.swift in Sources */,
+				A10011 /* USCISWebView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

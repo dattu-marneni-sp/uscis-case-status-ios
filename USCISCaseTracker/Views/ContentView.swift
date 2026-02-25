@@ -23,16 +23,6 @@ struct ContentView: View {
                             .font(.title3)
                     }
                 }
-
-                if !viewModel.cases.isEmpty {
-                    ToolbarItem(placement: .navigation) {
-                        Button {
-                            Task { await viewModel.refreshAllCases() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                }
             }
             .sheet(isPresented: $viewModel.showAddSheet) {
                 AddCaseSheet { receipt, nickname in
@@ -40,12 +30,42 @@ struct ContentView: View {
                 }
                 .presentationDetents([.medium])
             }
+            .sheet(item: refreshingBinding) { caseItem in
+                USCISWebView(
+                    receiptNumber: caseItem.receiptNumber,
+                    onStatusFetched: { status in
+                        viewModel.completeRefresh(id: caseItem.id, status: status)
+                    },
+                    onError: { error in
+                        viewModel.failRefresh(id: caseItem.id, error: error)
+                    },
+                    onDismiss: {
+                        viewModel.cancelRefresh()
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .interactiveDismissDisabled(false)
+            }
             .alert("Error", isPresented: $viewModel.showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage ?? "An unknown error occurred.")
             }
         }
+    }
+
+    private var refreshingBinding: Binding<CaseItem?> {
+        Binding(
+            get: {
+                guard let id = viewModel.refreshingCaseId else { return nil }
+                return viewModel.cases.first { $0.id == id }
+            },
+            set: { newValue in
+                if newValue == nil {
+                    viewModel.cancelRefresh()
+                }
+            }
+        )
     }
 
     private var backgroundFill: Color {
@@ -96,7 +116,7 @@ struct ContentView: View {
                     CaseCardView(
                         caseItem: caseItem,
                         onRefresh: {
-                            Task { await viewModel.refreshCase(id: caseItem.id) }
+                            viewModel.startRefresh(id: caseItem.id)
                         },
                         onDelete: {
                             withAnimation { viewModel.deleteCase(id: caseItem.id) }
@@ -108,9 +128,6 @@ struct ContentView: View {
                 }
             }
             .padding(.vertical)
-        }
-        .refreshable {
-            await viewModel.refreshAllCases()
         }
     }
 }
