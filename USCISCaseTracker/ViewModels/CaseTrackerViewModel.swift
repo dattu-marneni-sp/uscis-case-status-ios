@@ -76,12 +76,8 @@ final class CaseTrackerViewModel: ObservableObject {
     }
 
     func refreshAllCases() async {
-        await withTaskGroup(of: Void.self) { group in
-            for caseItem in cases {
-                group.addTask { [weak self] in
-                    await self?.refreshCase(id: caseItem.id)
-                }
-            }
+        for caseItem in cases {
+            await refreshCase(id: caseItem.id)
         }
     }
 
