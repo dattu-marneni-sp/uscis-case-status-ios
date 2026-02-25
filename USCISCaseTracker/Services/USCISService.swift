@@ -91,21 +91,17 @@ actor USCISService {
         var searchHTML = html
 
         if let divClass = divClass {
-            let divPattern = "<div class=\"\(divClass)\">(.*?)</div>"
-            if let range = searchHTML.range(of: divPattern, options: [.regularExpression, .dotMatchesLineSeparators]) {
-                searchHTML = String(searchHTML[range])
+            let divPattern = "<div class=\"\(divClass)\">[\\s\\S]*?</div>"
+            if let match = extractFirstMatch(from: searchHTML, pattern: divPattern, group: 0) {
+                searchHTML = match
             }
         }
 
-        let pattern = "<\(tag)[^>]*>(.*?)</\(tag)>"
-        guard let range = searchHTML.range(of: pattern, options: [.regularExpression, .dotMatchesLineSeparators]) else {
+        let pattern = "<\(tag)[^>]*>([\\s\\S]*?)</\(tag)>"
+        guard let content = extractFirstMatch(from: searchHTML, pattern: pattern, group: 1) else {
             return nil
         }
 
-        let match = String(searchHTML[range])
-        let content = match
-            .replacingOccurrences(of: "<\(tag)[^>]*>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "</\(tag)>", with: "")
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
