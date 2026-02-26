@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
 
 struct CaseCardView: View {
     let caseItem: CaseItem
@@ -24,8 +29,6 @@ struct CaseCardView: View {
         .padding(.horizontal)
     }
 
-    // MARK: - Header
-
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -40,14 +43,11 @@ struct CaseCardView: View {
                         .foregroundStyle(caseItem.nickname.isEmpty ? .primary : .secondary)
                         .monospaced()
                 }
-
                 Spacer()
-
                 HStack(spacing: 12) {
                     Button { onRefresh() } label: {
                         if caseItem.isLoading {
-                            ProgressView()
-                                .scaleEffect(0.8)
+                            ProgressView().scaleEffect(0.8)
                         } else {
                             Image(systemName: "arrow.clockwise")
                                 .font(.body.weight(.semibold))
@@ -57,6 +57,9 @@ struct CaseCardView: View {
                     .tint(.blue)
 
                     Menu {
+                        Button { copyReceiptNumber() } label: {
+                            Label("Copy Receipt Number", systemImage: "doc.on.doc")
+                        }
                         Button { startEditing() } label: {
                             Label("Edit Nickname", systemImage: "pencil")
                         }
@@ -70,9 +73,7 @@ struct CaseCardView: View {
                     }
 
                     Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isExpanded.toggle()
-                        }
+                        withAnimation(.easeInOut(duration: 0.25)) { isExpanded.toggle() }
                     } label: {
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption.weight(.bold))
@@ -80,11 +81,7 @@ struct CaseCardView: View {
                     }
                 }
             }
-
-            if isEditing {
-                nicknameEditor
-            }
-
+            if isEditing { nicknameEditor }
             if let lastRefreshed = caseItem.lastRefreshed {
                 Text("Updated \(lastRefreshed, style: .relative) ago")
                     .font(.caption2)
@@ -94,10 +91,11 @@ struct CaseCardView: View {
         .padding()
     }
 
-    // MARK: - Status
-
     private var statusSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let title = caseItem.status?.title.lowercased() ?? ""
+        let isApproved = title.contains("approved")
+        let isDenied = title.contains("denied") || title.contains("rejected")
+        return VStack(alignment: .leading, spacing: 10) {
             if let status = caseItem.status {
                 HStack(spacing: 8) {
                     statusIcon(for: status.title)
@@ -105,12 +103,19 @@ struct CaseCardView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(statusColor(for: status.title))
                 }
-
                 Text(status.details)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(detailsColor(isApproved: isApproved, isDenied: isDenied))
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
+                if status.title.lowercased().contains("case not found") {
+                    Button { onDelete() } label: {
+                        Label("Remove Case", systemImage: "trash")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .foregroundStyle(.red)
+                    .padding(.top, 4)
+                }
             } else if caseItem.isLoading {
                 HStack {
                     Spacer()
@@ -134,9 +139,21 @@ struct CaseCardView: View {
             }
         }
         .padding()
+        .background(statusSectionBackground(isApproved: isApproved, isDenied: isDenied))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - Nickname Editor
+    private func detailsColor(isApproved: Bool, isDenied: Bool) -> Color {
+        if isApproved { return Color.green.opacity(0.9) }
+        if isDenied { return Color.red.opacity(0.9) }
+        return .secondary
+    }
+
+    private func statusSectionBackground(isApproved: Bool, isDenied: Bool) -> Color {
+        if isApproved { return Color.green.opacity(0.15) }
+        if isDenied { return Color.red.opacity(0.15) }
+        return Color.clear
+    }
 
     private var nicknameEditor: some View {
         HStack {
@@ -145,10 +162,8 @@ struct CaseCardView: View {
                 .font(.subheadline)
                 .submitLabel(.done)
                 .onSubmit { saveNickname() }
-
             Button("Save") { saveNickname() }
                 .font(.subheadline.weight(.medium))
-
             Button("Cancel") { isEditing = false }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -156,13 +171,23 @@ struct CaseCardView: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Helpers
-
     private var cardBackground: Color {
+        let title = caseItem.status?.title.lowercased() ?? ""
+        if title.contains("approved") { return Color.green.opacity(0.2) }
+        if title.contains("denied") || title.contains("rejected") { return Color.red.opacity(0.2) }
         #if os(iOS)
-        Color(.systemBackground)
+        return Color(.systemBackground)
         #else
-        Color(nsColor: .controlBackgroundColor)
+        return Color(nsColor: .controlBackgroundColor)
+        #endif
+    }
+
+    private func copyReceiptNumber() {
+        #if os(iOS)
+        UIPasteboard.general.string = caseItem.receiptNumber
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(caseItem.receiptNumber, forType: .string)
         #endif
     }
 
@@ -179,6 +204,7 @@ struct CaseCardView: View {
     private func statusIcon(for title: String) -> some View {
         let lowered = title.lowercased()
         let (icon, color): (String, Color) = {
+            if lowered.contains("case not found") { return ("questionmark.circle.fill", .orange) }
             if lowered.contains("approved") { return ("checkmark.seal.fill", .green) }
             if lowered.contains("denied") || lowered.contains("rejected") { return ("xmark.seal.fill", .red) }
             if lowered.contains("received") || lowered.contains("accepted") { return ("tray.and.arrow.down.fill", .blue) }
@@ -189,7 +215,6 @@ struct CaseCardView: View {
             if lowered.contains("interview") { return ("person.2.fill", .indigo) }
             return ("clock.fill", .yellow)
         }()
-
         return Image(systemName: icon)
             .foregroundStyle(color)
             .font(.subheadline)
@@ -197,6 +222,7 @@ struct CaseCardView: View {
 
     private func statusColor(for title: String) -> Color {
         let lowered = title.lowercased()
+        if lowered.contains("case not found") { return .orange }
         if lowered.contains("approved") { return .green }
         if lowered.contains("denied") || lowered.contains("rejected") { return .red }
         if lowered.contains("produced") || lowered.contains("mailed") || lowered.contains("delivered") { return .teal }

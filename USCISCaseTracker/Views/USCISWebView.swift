@@ -1,182 +1,200 @@
 import SwiftUI
 import WebKit
 
+/// Hidden WebView used as fallback when URLSession is blocked by Cloudflare.
+/// Loads USCIS page, submits form via JS, extracts status. Stays invisible in view hierarchy.
 struct USCISWebView: View {
     let receiptNumber: String
-    let onStatusFetched: (CaseStatus) -> Void
-    let onError: (String) -> Void
-    let onDismiss: () -> Void
-
-    @State private var showWebView = true
-    @State private var statusText = "Loading USCIS..."
-    @State private var didExtract = false
+    let onComplete: (Result<CaseStatus, Error>) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(statusText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Cancel") { onDismiss() }
-                    .font(.subheadline)
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            if showWebView {
-                WebViewRepresentable(
-                    receiptNumber: receiptNumber,
-                    onPageReady: { isChallenge in
-                        statusText = isChallenge
-                            ? "Please complete the verification below"
-                            : "Reading case status..."
-                    },
-                    onStatusExtracted: { status in
-                        guard !didExtract else { return }
-                        didExtract = true
-                        showWebView = false
-                        if !status.title.isEmpty || !status.details.isEmpty {
-                            onStatusFetched(status)
-                        } else {
-                            onError("Could not read status. Please try again.")
-                        }
-                    },
-                    onError: { error in
-                        guard !didExtract else { return }
-                        didExtract = true
-                        onError(error)
-                    }
-                )
-                .frame(minHeight: 400)
-            }
-        }
+        WebViewRepresentable(receiptNumber: receiptNumber, onComplete: onComplete)
+            .frame(width: 100, height: 100)
+            .opacity(0)
+            .allowsHitTesting(false)
     }
 }
 
 #if os(iOS)
-struct WebViewRepresentable: UIViewRepresentable {
+private struct WebViewRepresentable: UIViewRepresentable {
     let receiptNumber: String
-    let onPageReady: (Bool) -> Void
-    let onStatusExtracted: (CaseStatus) -> Void
-    let onError: (String) -> Void
+    let onComplete: (Result<CaseStatus, Error>) -> Void
 
     func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
-        let wv = WKWebView(frame: .zero, configuration: config)
-        wv.navigationDelegate = context.coordinator
-        wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-        context.coordinator.loadStatus(in: wv, receipt: receiptNumber)
-        return wv
+        let config = makeWebViewConfig()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        webView.isInspectable = false
+        return webView
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        let coordinator = context.coordinator
+        let shouldLoad = !coordinator.hasStartedLoad || coordinator.receiptNumber != receiptNumber
+        guard shouldLoad else { return }
+        coordinator.receiptNumber = receiptNumber
+        coordinator.onComplete = onComplete
+        coordinator.hasStartedLoad = true
+        coordinator.hasSubmittedForm = false
+        coordinator.startTimeout()
+        guard let url = URL(string: "https://egov.uscis.gov/casestatus/landing.do") else {
+            onComplete(.failure(USCISError.parsingError))
+            return
+        }
+        webView.load(URLRequest(url: url))
+    }
 
-    func makeCoordinator() -> WebViewCoordinator {
-        WebViewCoordinator(onPageReady: onPageReady, onStatusExtracted: onStatusExtracted, onError: onError)
+    func makeCoordinator() -> Coordinator {
+        Coordinator(receiptNumber: receiptNumber, onComplete: onComplete)
     }
 }
 #else
-struct WebViewRepresentable: NSViewRepresentable {
+private struct WebViewRepresentable: NSViewRepresentable {
     let receiptNumber: String
-    let onPageReady: (Bool) -> Void
-    let onStatusExtracted: (CaseStatus) -> Void
-    let onError: (String) -> Void
+    let onComplete: (Result<CaseStatus, Error>) -> Void
 
     func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
-        let wv = WKWebView(frame: .zero, configuration: config)
-        wv.navigationDelegate = context.coordinator
-        wv.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        context.coordinator.loadStatus(in: wv, receipt: receiptNumber)
-        return wv
+        let config = makeWebViewConfig()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        return webView
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        let coordinator = context.coordinator
+        let shouldLoad = !coordinator.hasStartedLoad || coordinator.receiptNumber != receiptNumber
+        guard shouldLoad else { return }
+        coordinator.receiptNumber = receiptNumber
+        coordinator.onComplete = onComplete
+        coordinator.hasStartedLoad = true
+        coordinator.hasSubmittedForm = false
+        coordinator.startTimeout()
+        guard let url = URL(string: "https://egov.uscis.gov/casestatus/landing.do") else {
+            onComplete(.failure(USCISError.parsingError))
+            return
+        }
+        webView.load(URLRequest(url: url))
+    }
 
-    func makeCoordinator() -> WebViewCoordinator {
-        WebViewCoordinator(onPageReady: onPageReady, onStatusExtracted: onStatusExtracted, onError: onError)
+    func makeCoordinator() -> Coordinator {
+        Coordinator(receiptNumber: receiptNumber, onComplete: onComplete)
     }
 }
 #endif
 
-class WebViewCoordinator: NSObject, WKNavigationDelegate {
-    let onPageReady: (Bool) -> Void
-    let onStatusExtracted: (CaseStatus) -> Void
-    let onError: (String) -> Void
-    private var hasExtracted = false
-    private var pollCount = 0
-    private let maxPolls = 30
+private func makeWebViewConfig() -> WKWebViewConfiguration {
+    let config = WKWebViewConfiguration()
+    config.processPool = WKProcessPool()
+    // Use Safari-like user agent so Cloudflare/PAT may auto-pass on Apple devices
+    config.applicationNameForUserAgent = "Safari/605.1.15"
+    return config
+}
 
-    init(onPageReady: @escaping (Bool) -> Void,
-         onStatusExtracted: @escaping (CaseStatus) -> Void,
-         onError: @escaping (String) -> Void) {
-        self.onPageReady = onPageReady
-        self.onStatusExtracted = onStatusExtracted
-        self.onError = onError
+private final class Coordinator: NSObject, WKNavigationDelegate {
+    var receiptNumber: String
+    var onComplete: (Result<CaseStatus, Error>) -> Void
+    var hasStartedLoad = false
+    var hasSubmittedForm = false
+    var hasCompleted = false
+    var timeoutWorkItem: DispatchWorkItem?
+
+    init(receiptNumber: String, onComplete: @escaping (Result<CaseStatus, Error>) -> Void) {
+        self.receiptNumber = receiptNumber
+        self.onComplete = onComplete
     }
 
-    func loadStatus(in webView: WKWebView, receipt: String) {
-        guard let url = USCISService.buildStatusURL(for: receipt) else { return }
-        let body = USCISService.buildPOSTBody(for: receipt)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body.data(using: .utf8)
-        request.timeoutInterval = 60
-        webView.load(request)
+    func startTimeout() {
+        timeoutWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, !self.hasCompleted else { return }
+            self.hasCompleted = true
+            DispatchQueue.main.async {
+                self.onComplete(.failure(USCISError.timeout))
+            }
+        }
+        timeoutWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: work)
+    }
+
+    func finishWith(_ result: Result<CaseStatus, Error>) {
+        guard !hasCompleted else { return }
+        hasCompleted = true
+        timeoutWorkItem?.cancel()
+        DispatchQueue.main.async { self.onComplete(result) }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        pollForStatus(in: webView)
+        guard let url = webView.url?.absoluteString else { return }
+        let isLanding = url.contains("landing.do")
+        let isResult = url.contains("mycasestatus")
+        if isLanding && !hasSubmittedForm {
+            hasSubmittedForm = true
+            submitForm(webView: webView)
+        } else if isResult {
+            extractStatus(webView: webView)
+        }
+    }
+
+    private func submitForm(webView: WKWebView) {
+        let escaped = receiptNumber
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let js = """
+        (function() {
+            var input = document.querySelector('input[name="appReceiptNum"]') || document.querySelector('#receipt_number') || document.querySelector('#appReceiptNum');
+            if (input) input.value = "\(escaped)";
+            var form = document.querySelector('form');
+            if (form) { form.submit(); return true; }
+            return false;
+        })();
+        """
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            guard let self = self else { return }
+            if let error = error {
+                self.finishWith(.failure(error))
+                return
+            }
+            if (result as? Bool) != true {
+                self.finishWith(.failure(USCISError.parsingError))
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        onError(error.localizedDescription)
+        finishWith(.failure(error))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        onError(error.localizedDescription)
+        finishWith(.failure(error))
     }
 
-    private func pollForStatus(in webView: WKWebView) {
-        guard !hasExtracted, pollCount < maxPolls else { return }
-        pollCount += 1
-
+    private func extractStatus(webView: WKWebView) {
         webView.evaluateJavaScript(USCISService.cloudflareCheckJS) { [weak self] result, _ in
             guard let self = self else { return }
-            let state = result as? String ?? "ready"
-
-            if state == "challenge" {
-                self.onPageReady(true)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    self.pollForStatus(in: webView)
+            if let check = result as? String, check == "challenge" {
+                self.finishWith(.failure(USCISError.cloudflareBlocked))
+                return
+            }
+            webView.evaluateJavaScript(USCISService.extractionJS) { [weak self] result, error in
+                guard let self = self else { return }
+                if let error = error {
+                    self.finishWith(.failure(error))
+                    return
                 }
-            } else {
-                self.onPageReady(false)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.extractStatus(from: webView)
+                guard let json = result as? String,
+                      let data = json.data(using: .utf8),
+                      let parsed = try? JSONDecoder().decode(ExtractionResult.self, from: data),
+                      !parsed.title.isEmpty || !parsed.details.isEmpty else {
+                    self.finishWith(.failure(USCISError.parsingError))
+                    return
                 }
+                self.finishWith(.success(CaseStatus(title: parsed.title, details: parsed.details)))
             }
         }
     }
+}
 
-    private func extractStatus(from webView: WKWebView) {
-        guard !hasExtracted else { return }
-
-        webView.evaluateJavaScript(USCISService.extractionJS) { [weak self] result, _ in
-            guard let self = self, !self.hasExtracted else { return }
-            self.hasExtracted = true
-
-            if let jsonString = result as? String,
-               let data = jsonString.data(using: .utf8),
-               let parsed = try? JSONDecoder().decode(CaseStatus.self, from: data) {
-                self.onStatusExtracted(parsed)
-            } else {
-                self.onStatusExtracted(CaseStatus(title: "", details: ""))
-            }
-        }
-    }
+private struct ExtractionResult: Decodable {
+    let title: String
+    let details: String
 }

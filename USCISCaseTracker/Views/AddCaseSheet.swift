@@ -24,12 +24,12 @@ struct AddCaseSheet: View {
                 } header: {
                     Text("Receipt Number")
                 } footer: {
-                    Text("13 characters: 3 letters + 10 digits")
+                    Text("13 characters: 3 letters + 10 digits (EAC, WAC, LIN, SRC, MSC, IOE, YSC, etc.)")
                         .font(.caption2)
                 }
 
                 Section {
-                    TextField("e.g. My H1B, Wife's EAD", text: $nickname)
+                    TextField("e.g. I-765 Work Permit, I-485 AOS", text: $nickname)
                         .focused($focusedField, equals: .nickname)
                 } header: {
                     Text("Nickname (Optional)")
@@ -55,9 +55,7 @@ struct AddCaseSheet: View {
                     .disabled(receiptNumber.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .onAppear {
-                focusedField = .receipt
-            }
+            .onAppear { focusedField = .receipt }
         }
     }
 }

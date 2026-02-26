@@ -6,9 +6,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                backgroundFill
-                    .ignoresSafeArea()
-
+                backgroundFill.ignoresSafeArea()
                 if viewModel.cases.isEmpty {
                     emptyState
                 } else {
@@ -23,6 +21,12 @@ struct ContentView: View {
                             .font(.title3)
                     }
                 }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { viewModel.showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .font(.title3)
+                    }
+                }
             }
             .sheet(isPresented: $viewModel.showAddSheet) {
                 AddCaseSheet { receipt, nickname in
@@ -30,42 +34,23 @@ struct ContentView: View {
                 }
                 .presentationDetents([.medium])
             }
-            .sheet(item: refreshingBinding) { caseItem in
-                USCISWebView(
-                    receiptNumber: caseItem.receiptNumber,
-                    onStatusFetched: { status in
-                        viewModel.completeRefresh(id: caseItem.id, status: status)
-                    },
-                    onError: { error in
-                        viewModel.failRefresh(id: caseItem.id, error: error)
-                    },
-                    onDismiss: {
-                        viewModel.cancelRefresh()
-                    }
-                )
-                .presentationDetents([.medium, .large])
-                .interactiveDismissDisabled(false)
+            .sheet(isPresented: $viewModel.showSettings) {
+                SettingsView()
             }
             .alert("Error", isPresented: $viewModel.showError) {
-                Button("OK", role: .cancel) {}
+                Button("OK", role: .cancel) {
+                    viewModel.lastFailedReceiptNumber = nil
+                }
+                if viewModel.errorMessage?.contains("API credentials") == true {
+                    Button("Open Settings") {
+                        viewModel.showError = false
+                        viewModel.showSettings = true
+                    }
+                }
             } message: {
                 Text(viewModel.errorMessage ?? "An unknown error occurred.")
             }
         }
-    }
-
-    private var refreshingBinding: Binding<CaseItem?> {
-        Binding(
-            get: {
-                guard let id = viewModel.refreshingCaseId else { return nil }
-                return viewModel.cases.first { $0.id == id }
-            },
-            set: { newValue in
-                if newValue == nil {
-                    viewModel.cancelRefresh()
-                }
-            }
-        )
     }
 
     private var backgroundFill: Color {
@@ -76,25 +61,18 @@ struct ContentView: View {
         #endif
     }
 
-    // MARK: - Empty State
-
     private var emptyState: some View {
         VStack(spacing: 20) {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 64))
                 .foregroundStyle(.secondary)
-
             Text("No Cases Yet")
                 .font(.title2.weight(.semibold))
-
             Text("Add your USCIS receipt number to\ntrack your case status.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-
-            Button {
-                viewModel.showAddSheet = true
-            } label: {
+            Button { viewModel.showAddSheet = true } label: {
                 Label("Add Your First Case", systemImage: "plus")
                     .font(.headline)
                     .padding(.horizontal, 24)
@@ -107,23 +85,15 @@ struct ContentView: View {
         .padding()
     }
 
-    // MARK: - Case List
-
     private var caseList: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 ForEach(viewModel.cases) { caseItem in
                     CaseCardView(
                         caseItem: caseItem,
-                        onRefresh: {
-                            viewModel.startRefresh(id: caseItem.id)
-                        },
-                        onDelete: {
-                            withAnimation { viewModel.deleteCase(id: caseItem.id) }
-                        },
-                        onNicknameChange: { newName in
-                            viewModel.updateNickname(id: caseItem.id, nickname: newName)
-                        }
+                        onRefresh: { viewModel.startRefresh(id: caseItem.id) },
+                        onDelete: { withAnimation { viewModel.deleteCase(id: caseItem.id) } },
+                        onNicknameChange: { viewModel.updateNickname(id: caseItem.id, nickname: $0) }
                     )
                 }
             }
